@@ -43,8 +43,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Scanner',
+          tabBarIcon: ({ color }) => <Ionicons name="barcode" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -55,10 +55,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="food-comparison"
+        options={{
+          title: 'Comparar',
+          tabBarIcon: ({ color }) => <Ionicons name="git-compare" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="search-history"
+        options={{
+          title: 'Historial',
+          tabBarIcon: ({ color }) => <Ionicons name="time" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="perfil"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color }) => (<Ionicons name="person" size={24} color={color} />),
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
         }}
       />
     </Tabs>

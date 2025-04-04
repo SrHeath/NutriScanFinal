@@ -17,7 +17,7 @@ export default function TabOneScreen() {
   const [isScannerVisible, setIsScannerVisible] = useState(false);
   const [scannedAlimento, setScannedAlimento] = useState<Alimento | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentSearches, setRecentSearches] = useState<Alimento[]>([]);
   const [searchResults, setSearchResults] = useState<Alimento[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedAlimento, setSelectedAlimento] = useState<Alimento | null>(null);
@@ -33,12 +33,33 @@ export default function TabOneScreen() {
 
   const loadRecentSearches = useCallback(async () => {
     try {
-      const searches = await AsyncStorage.getItem('recentSearches');
+      console.log('Cargando búsquedas recientes...');
+      const searches = await AsyncStorage.getItem('recent_searches');
+      console.log('Búsquedas encontradas en AsyncStorage:', searches);
+      
       if (searches) {
-        setRecentSearches(JSON.parse(searches));
+        const parsedSearches = JSON.parse(searches);
+        console.log('Búsquedas parseadas:', parsedSearches);
+        
+        // Ordenar por fecha más reciente y asegurarse de que timestamp existe
+        const validSearches = parsedSearches
+          .filter((search: Alimento & { timestamp: number }) => {
+            const isValid = search && search.timestamp && search.id && search.nombre;
+            if (!isValid) {
+              console.log('Búsqueda inválida encontrada:', search);
+            }
+            return isValid;
+          })
+          .sort((a: Alimento & { timestamp: number }, b: Alimento & { timestamp: number }) => b.timestamp - a.timestamp);
+        
+        console.log('Búsquedas válidas ordenadas:', validSearches);
+        setRecentSearches(validSearches);
+      } else {
+        console.log('No se encontraron búsquedas recientes');
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
+      Alert.alert('Error', 'No se pudieron cargar las búsquedas recientes');
     }
   }, []);
 
@@ -53,23 +74,38 @@ export default function TabOneScreen() {
     }
   }, []);
 
-  const addToRecentSearches = async (query: string) => {
+  const addToRecentSearches = async (alimento: Alimento) => {
     try {
+      console.log('Agregando nueva búsqueda:', alimento);
+      
+      if (!alimento || !alimento.id || !alimento.nombre) {
+        console.error('Alimento inválido:', alimento);
+        return;
+      }
+
       const newSearches = [
-        query,
-        ...recentSearches.filter(s => s !== query)
-      ].slice(0, 5);
+        { ...alimento, timestamp: Date.now() },
+        ...recentSearches.filter(s => s.id !== alimento.id)
+      ].slice(0, 10);
+      
+      console.log('Nuevas búsquedas a guardar:', newSearches);
       
       setRecentSearches(newSearches);
-      await AsyncStorage.setItem('recentSearches', JSON.stringify(newSearches));
+      await AsyncStorage.setItem('recent_searches', JSON.stringify(newSearches));
+      console.log('Búsquedas guardadas exitosamente');
+      
+      // Verificar que se guardó correctamente
+      const savedSearches = await AsyncStorage.getItem('recent_searches');
+      console.log('Verificación de búsquedas guardadas:', savedSearches);
     } catch (error) {
       console.error('Error saving recent search:', error);
+      Alert.alert('Error', 'No se pudo guardar la búsqueda reciente');
     }
   };
 
   const clearRecentSearches = async () => {
     try {
-      await AsyncStorage.removeItem('recentSearches');
+      await AsyncStorage.removeItem('recent_searches');
       setRecentSearches([]);
     } catch (error) {
       console.error('Error clearing recent searches:', error);
@@ -112,7 +148,9 @@ export default function TabOneScreen() {
     try {
       const results = await foodDB.searchFoods(query);
       setSearchResults(results);
-      addToRecentSearches(query);
+      if (results.length > 0) {
+        addToRecentSearches(results[0]);
+      }
     } catch (error) {
       console.error('Error searching foods:', error);
       Alert.alert('Error', 'No se pudieron cargar los resultados');
@@ -130,32 +168,37 @@ export default function TabOneScreen() {
   }, [searchQuery]);
 
   const handleBarcodeScan = async (alimento: Alimento | null, barcode: string) => {
-    setIsScannerVisible(false);
-    
-    if (alimento) {
-      setSelectedAlimento(alimento);
-      setSearchResults([alimento]);
-      // No limpiamos la búsqueda para mantener el resultado visible
-    } else {
-      Alert.alert(
-        'Producto no encontrado',
-        '¿Deseas agregar este producto a la base de datos?',
-        [
-          {
-            text: 'No',
-            style: 'cancel'
-          },
-          {
-            text: 'Sí',
-            onPress: () => {
-              router.push({
-                pathname: '/agregar-alimento',
-                params: { barcode }
-              });
+    try {
+      setIsScannerVisible(false);
+      
+      if (alimento) {
+        setSearchResults([alimento]);
+        await addToRecentSearches(alimento);
+      } else {
+        // Producto no encontrado, preguntar si desea registrarlo
+        Alert.alert(
+          'Producto no encontrado',
+          '¿Deseas registrar este producto?',
+          [
+            {
+              text: 'No',
+              style: 'cancel'
+            },
+            {
+              text: 'Sí',
+              onPress: () => {
+                router.push({
+                  pathname: '/agregar-alimento',
+                  params: { barcode }
+                });
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error al escanear:', error);
+      Alert.alert('Error', 'Hubo un problema al procesar el código de barras. Por favor, intenta de nuevo.');
     }
   };
 
@@ -198,23 +241,40 @@ export default function TabOneScreen() {
 
           {/* Búsquedas recientes */}
           {searchQuery.trim().length === 0 && recentSearches.length > 0 && (
-            <ThemedView style={styles.section}>
+            <ThemedView style={styles.recentContainer}>
               <View style={styles.sectionHeader}>
-                <ThemedText type="subtitle">Búsquedas recientes</ThemedText>
+                <ThemedText style={styles.sectionTitle}>Búsquedas recientes</ThemedText>
                 <TouchableOpacity onPress={clearRecentSearches}>
                   <ThemedText style={styles.clearButton}>Limpiar</ThemedText>
                 </TouchableOpacity>
               </View>
-              <ScrollView horizontal style={styles.recentSearches}>
-                {recentSearches.map((search, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.recentSearchItem}
-                    onPress={() => setSearchQuery(search)}
-                  >
-                    <ThemedText>{search}</ThemedText>
-                  </TouchableOpacity>
-                ))}
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.recentSearches}
+              >
+                {recentSearches.map((item, index) => {
+                  if (!item || !item.nombre) return null;
+                  return (
+                    <TouchableOpacity 
+                      key={item.id || index} 
+                      style={styles.recentItem}
+                      onPress={() => handleSearch(item.nombre)}
+                    >
+                      <ThemedText style={styles.recentItemText}>
+                        {typeof item.nombre === 'string' ? item.nombre : 'Alimento'}
+                      </ThemedText>
+                      {item.timestamp && (
+                        <ThemedText style={styles.recentItemTime}>
+                          {new Date(item.timestamp).toLocaleTimeString('es-ES', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </ThemedText>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </ThemedView>
           )}
@@ -330,21 +390,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   clearButton: {
     color: '#666',
     fontSize: 14,
   },
+  recentContainer: {
+    marginVertical: 16,
+  },
   recentSearches: {
     flexGrow: 0,
+    paddingLeft: 16,
   },
-  recentSearchItem: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+  recentItem: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 8,
     marginRight: 8,
+    minWidth: 120,
+    maxWidth: 200,
+  },
+  recentItemText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  recentItemTime: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
   },
   searchResults: {
     marginTop: 8,
